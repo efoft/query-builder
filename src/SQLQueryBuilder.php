@@ -4,7 +4,7 @@ namespace QueryBuilder;
  * @package   SQLQueryBuilder
  * @author    efoft
  *
- * Builds SQL query with :substitudes from chained calls.
+ * Builds SQL query with :tokens from chained calls.
  *
  * Example:
  * $q = new SQLQueryBuilder();
@@ -48,7 +48,7 @@ class SQLQueryBuilder
   /**
    * @var   array
    *
-   * Keeps all :substitution values.
+   * Keeps all :token values.
    */
   private $bindings = array();
   
@@ -82,8 +82,10 @@ class SQLQueryBuilder
       'tables'  => array(),
       'action'  => NULL,
       'cols'    => array(),
+      'distinct'=> NULL,
       'order'   => array(),
       'group'   => array(),
+      'join'    => array(),
       'where'   => array(),
       'limit'   => NULL
     );
@@ -92,7 +94,7 @@ class SQLQueryBuilder
   }
 
   /**
-   * @return  $string   Built SQL query with :substitutes.
+   * @return  $string   Built SQL query with :tokens.
    * @throws  InvalidArgumentException
    */
   public function getQuery()
@@ -100,16 +102,17 @@ class SQLQueryBuilder
     switch($this->stmt['action'])
     {
       case 'SELECT':
-        $expr = $this->getSelectCols() . ' FROM ' . implode(',', $this->stmt['tables']) . $this->getWhere() . $this->getOrderBy() . $this->getGroupBy() . $this->getLimit();
+        $expr  = $this->stmt['distinct'] . $this->getSelectCols() . ' FROM ' . implode(',', $this->stmt['tables']);
+        $expr .= $this->getJoin() . $this->getWhere() . $this->getOrderBy() . $this->getGroupBy() . $this->getLimit();
         break;
       case 'INSERT':
         $expr = 'INTO ' . $this->stmt['tables'][0] . $this->getInsertCols() . ' VALUES ' . $this->getInsertValues();
         break;
       case 'UPDATE':
-        $expr = $this->stmt['tables'][0] . ' SET ' . $this->getUpdateSet() . $this->getWhere();
+        $expr = $this->stmt['tables'][0] . $this->getJoin() . ' SET ' . $this->getUpdateSet() . $this->getWhere();
         break;
       case 'DELETE':
-        $expr = 'FROM ' . $this->stmt['tables'][0] . $this->getWhere();
+        $expr = $this->stmt['tables'][0] . ' FROM ' . $this->stmt['tables'][0] . $this->getJoin() . $this->getWhere();
         break;
       default:
         throw new \InvalidArgumentException(sprintf('Action "%s" is not supported', $this->action));
@@ -157,6 +160,17 @@ class SQLQueryBuilder
   }
   
   /**
+   * If called the word 'DISTINCT' is added to a SELECT query.
+   *
+   * @return  $this
+   */
+  public function distinct()
+  {
+    $this->stmt['distinct'] = 'DISTINCT ';
+    return $this;
+  }
+  
+  /**
    * Specifies the field to order by.
    * Accepts several args at once or can be called multiple times for appending field names.
    * Can be chained with other calls.
@@ -194,6 +208,27 @@ class SQLQueryBuilder
   public function limit($limit)
   {
     $this->stmt['limit'] = $limit;
+    return $this;
+  }
+  
+  /**
+   * Adds 'JOIN <table> ON ...' to SELECT query.
+   * Can be called multiple times per query.
+   *
+   * @param   string    $jointblname    table name that is joined
+   * @param   string    $maintlbfld     joining key on main table (no need to specify "table." before it)
+   * @param   string    $jointblfld     joining key on joined table
+   * @param   string    $type           (optional) type of JOIN
+   * @return  $this
+   */
+  public function join($jointblname, $maintlbfld, $jointblfld, $type = 'LEFT')
+  {
+    $this->stmt['join'][] = array(
+            'table' => $jointblname,
+            'f1'    => $maintlbfld,
+            'f2'    => $jointblfld,
+            'type'  => $type
+    );
     return $this;
   }
   
@@ -303,7 +338,7 @@ class SQLQueryBuilder
     foreach($this->stmt['order'] as $col=>$dest)
     {
       if ( is_int($col) ) ($col = $dest) && ( $dest = NULL);
-      $result .= trim($col . ' ' . strtoupper($dest)) . ',';
+      $result .= trim($this->sanitize($col) . ' ' . strtoupper($dest)) . ',';
     }
     return substr($result,0,-1);
   }
@@ -316,6 +351,18 @@ class SQLQueryBuilder
   private function getLimit()
   {
     return ( $this->stmt['limit'] ) ? ' LIMIT ' . (int)$this->stmt['limit'] : '';
+  }
+  
+  private function getJoin()
+  {
+    $expr = '';
+    foreach($this->stmt['join'] as $j)
+    {
+      $expr .= ' ' . strtoupper($j['type']) . ' JOIN ' . $j['table'] . ' ON ' . $this->sanitize($this->stmt['tables'][0] . '.' . $j['f1']);
+      $expr .= '=' . $this->sanitize($j['table'] . '.' . $j['f2']);
+    }
+    
+    return $expr;
   }
   
   private function getInsertCols()
@@ -372,7 +419,6 @@ class SQLQueryBuilder
     
     foreach($where as $k=>$v)
     {
-      //echo 'key: ' . print_r($k, true) . ', value: ' . print_r($v, true) . "\n";
       if ( $k === '$or')
         ($result = $this->buildConditions($v, ' OR ')) && $conditions[] = $result;
       elseif ( $k === '$and' || is_numeric($k))
@@ -401,6 +447,7 @@ class SQLQueryBuilder
     {
       case 'none':
         $ldelim = $rdelim = '';
+        break;
       case 'mysql':
         $ldelim = $rdelim = '`';
         break;
