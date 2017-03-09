@@ -2,7 +2,7 @@
     "name": "efoft/query-builder",
     "type": "library",
     "description": "Helper classes allowing to generate native syntax queries to databases",
-    "version" : "0.2.0-alpha1",
+    "version" : "1.0.0",
     "require": {
         "php": ">=5.3.0"
     },
