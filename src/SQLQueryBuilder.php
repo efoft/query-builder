@@ -112,7 +112,9 @@ class SQLQueryBuilder
         $expr = $this->stmt['tables'][0] . $this->getJoin() . ' SET ' . $this->getUpdateSet() . $this->getWhere();
         break;
       case 'DELETE':
-        $expr = $this->stmt['tables'][0] . ' FROM ' . $this->stmt['tables'][0] . $this->getJoin() . $this->getWhere();
+        // in case of DELETE... INNER JOIN it's required to specify what table we delete records from
+        $expr = ( $join = $this->getJoin() ) ? $this->stmt['tables'][0] : '';
+        $expr .= ' FROM ' . $this->stmt['tables'][0] . $join . $this->getWhere();
         break;
       default:
         throw new \InvalidArgumentException(sprintf('Action "%s" is not supported', $this->action));
