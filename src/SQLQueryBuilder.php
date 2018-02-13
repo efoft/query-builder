@@ -57,16 +57,21 @@ class SQLQueryBuilder
    * @param   boolean   $debug
    * @throws  InvalidArgumentException
    */
-  public function __construct($quoting = 'none', $debug = false)
+  public function __construct($quoting = 'none')
   {
     $allowed_quoting_types = array('none','sql','mysql','mssql','sqlite');
     if ( ! is_string($quoting) || ! in_array($quoting, $allowed_quoting_types) )
       throw new \InvalidArgumentException(sprintf('Quoting type "%s" is not supported, allowed are: %s', $quoting, implode(', ', $allowed_quoting_types)));
     $this->quoting = $quoting;
-    
-    if ( $debug ) $this->debug = true;
-
     $this->newQuery();
+  }
+
+  /*
+   * @param   boolean  $debug
+   */
+  public function setDebug($debug = false)
+  {
+    $this->debug = (bool)$debug;
   }
   
   /**
@@ -463,11 +468,25 @@ class SQLQueryBuilder
         break;
     }
     
-    $valueArr = explode('.', $name, 2);
+    // If the argument is an SQL-function like SUM(), COUNT() we need to extract field name from it
+    if ( false !== strpos($name, '(') )
+    {
+      // $matches[0]=>original string, [1]=>first substitution(SQL-function), [2]=>SQL-function arg, [3]=>')'
+      preg_match('/^(.+\()(.+)(\))$/', $name, $matches);
+      $field = $matches[2];
+    }
+    else
+      $field = $name;
+
+    $valueArr = explode('.', $field, 2);
     foreach ($valueArr as $key => $subValue)
       $valueArr[$key] = trim($subValue) == '*' ? $subValue : $ldelim . trim($subValue) . $rdelim;
 
-    return implode('.', $valueArr);
+    $result = implode('.', $valueArr);
+    if ( isset($matches) )
+      return $matches[1] . $result . $matches[3];
+
+    return $result;
   }
   
   private function bind($k, $v)
